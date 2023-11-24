@@ -1,0 +1,63 @@
+## Exploitation Steps
+
+**Curl and Initial Analysis**
+
+Use `curl -i IP` to display the headers, including the redirect.
+
+**Local File Inclusion (LFI) Analysis**
+
+Analyze the various requests made on the site with Burp.
+Send a GET request: `GET /download?fn=../etc/passwd HTTP/1.1` where LFI is present. 
+Requesting a non-existent file triggers an error and provides information on accessing a console protected by a PIN.
+
+**Getting PIN using Werkzeug**
+
+Refer to [Hacktricks](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/werkzeug) for instructions on how to crack Werkzeug and obtain the PIN.
+
+**Obtaining Reverse Shell**
+
+Utilize `os.system` command to start a reverse shell.
+
+**Exploring Configuration Files**
+
+Investigate configuration files with `cd ..`.
+
+**MySQL Access and Getting Password**
+
+Access MySQL and inspect the DB to retrieve the password for "corum": `5db7caa1d13cc37c9fc2`.
+
+**SSH Access**
+
+Log in via SSH.
+
+## Advanced Investigation
+
+**Using pspy to Monitor Processes**
+
+Download and use `pspy` to examine processes. 
+Among them there is a Chrome instance with remote debugging enabled.
+
+**Remote Debugging in Chrome**
+
+Learn about [Chrome Remote Debugging](https://developers.google.com/cast/docs/debugging/remote_debugger) and [this guide](https://arnab-k.medium.com/chrome-remote-debugging-7933a6f6d44d).
+
+**Exploit Remote Debugging**
+
+Connected to remote debugging, an instance of "superpass" is logged in as "edwards". Access the vault and retrieve its password: `d07867c6267dcb5df0af`.
+
+**Logging in as Edwards**
+
+SSH log in as "edwards".
+
+## Privilege Escalation
+
+**Sudo Version Vulnerability**
+
+Check `sudo` version, which is vulnerable to CVE. Details in this [CVE report](https://www.synacktiv.com/sites/default/files/2023-01/sudo-CVE-2023-22809.pdf).
+
+**Exploiting Sudo Vulnerability**
+
+Run `EDITOR='vim -- /app/venv/bin/activate' sudo -u dev_admin sudoedit /app/config_test.json`. 
+Append `chmod u+s /bin/bash` in the end of the file.
+Launch `/bin/bash -p`. This executes the executable with real SUID and GUID (useful for binaries with SUID). 
+[More info](https://www.linuxquestions.org/questions/programming-9/what-does-p-do-in-bin-bash-p-809364/).

